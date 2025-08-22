@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portland Today - News Dashboard</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <div class="header-content">
+            <div class="header-main">
+                <h1>Portland Today</h1>
+                <p>Local News Dashboard</p>
+            </div>
+            <div class="header-controls">
+                <div class="today-toggle">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="today-toggle" class="toggle-input" checked>
+                        <span class="toggle-slider"></span>
+                        <span class="toggle-text">Today Only</span>
+                    </label>
+                </div>
+                <div class="detail-toggle">
+                    <label class="toggle-label">
+                        <input type="checkbox" id="detail-toggle" class="toggle-input">
+                        <span class="toggle-slider"></span>
+                        <span class="toggle-text">Show Details</span>
+                    </label>
+                </div>
+            </div>
+            <div class="weather-section" id="weather-section">
+                <div class="weather-loading">Loading weather...</div>
+                <div class="weather-display hidden" id="weather-display">
+                    <div class="weather-temp" id="weather-temp">--°</div>
+                    <div class="weather-desc" id="weather-desc">--</div>
+                    <div class="weather-location">Portland, OR</div>
+                </div>
+                <div class="weather-error hidden" id="weather-error">Weather unavailable</div>
+            </div>
+        </div>
+    </header>
+
+    <main>
+        <section class="controls">
+            <div class="feed-controls">
+                <input type="url" id="rss-input" placeholder="Enter RSS feed URL...">
+                <button id="add-feed">Add Feed</button>
+            </div>
+            <div class="filter-controls">
+                <select id="category-filter">
+                    <option value="all">All Categories</option>
+                </select>
+                <button id="refresh-feeds">Refresh All</button>
+            </div>
+        </section>
+
+        <section class="dashboard">
+            <div id="loading" class="loading hidden">Loading articles...</div>
+            <div id="error" class="error hidden"></div>
+            <div id="articles-container" class="articles-grid"></div>
+        </section>
+    </main>
+
+    <footer>
+        <div class="footer-content">
+            <p>&copy; 2025 Portland Today - RSS News Aggregator</p>
+            <div class="footer-links">
+                <a href="/rss" class="rss-link" title="Subscribe to Portland Today RSS Feed">
+                    <span class="rss-icon">📡</span>
+                    RSS Feed
+                </a>
+            </div>
+        </div>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>
