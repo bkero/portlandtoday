@@ -339,8 +339,19 @@ class RSSManager {
                     }
                 });
             }
+        } else if (urlCategory) {
+            // URL-derived category (oregonlive, wweek) is the editorial section —
+            // keep it pinned as primary and append content tags as secondary signals.
+            const urlIndex = tags.indexOf(urlCategory);
+            if (urlIndex > 0) {
+                tags.splice(urlIndex, 1);
+                tags.unshift(urlCategory);
+            }
+            contentTags.forEach(contentTag => {
+                if (!tags.includes(contentTag)) tags.push(contentTag);
+            });
         } else {
-            // For non-Reddit feeds, prioritize content-based categorization
+            // For other feeds, prioritize content-based categorization
             // Use the first content-based tag as primary, fallback to feed category
             if (contentTags.length > 0) {
                 // Remove content tags from current position and add to front
