@@ -101,24 +101,39 @@ class RSSManager {
     }
 
     async fetchFeed(feedUrl) {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000);
         try {
             console.log(`Fetching feed: ${feedUrl}`);
             const { default: fetch } = await import('node-fetch');
             const response = await fetch(feedUrl, {
+                signal: controller.signal,
                 headers: {
                     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                 }
             });
-            
+
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
-            
-            const text = await response.text();
+
+            const MAX_BYTES = 5 * 1024 * 1024;
+            const chunks = [];
+            let totalBytes = 0;
+            for await (const chunk of response.body) {
+                totalBytes += chunk.length;
+                if (totalBytes > MAX_BYTES) {
+                    throw new Error(`Feed response exceeds 5MB limit: ${feedUrl}`);
+                }
+                chunks.push(chunk);
+            }
+            const text = Buffer.concat(chunks).toString('utf8');
             return await this.parser.parseStringPromise(text);
         } catch (error) {
             console.error(`Error fetching feed ${feedUrl}:`, error.message);
             return null;
+        } finally {
+            clearTimeout(timeout);
         }
     }
 
