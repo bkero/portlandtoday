@@ -4,13 +4,17 @@ sources:
         https://www.portlandmercury.com/portland/Rss.xml
         https://www.wweek.com/arc/outboundfeeds/rss/?outputType=xml
         https://www.oregonlive.com/arc/outboundfeeds/rss/?outputType=xml
-        https://www.kgw.com/rss
+        https://www.kgw.com/feeds/syndication/rss/news/local
+        # https://www.oregonmetro.gov/news.xml (404 - feed removed by Oregon Metro as of May 2026)
+        https://www.opb.org/arc/outboundfeeds/rss/?outputType=xml
+    Food:
+        https://pdx.eater.com/rss/index.xml
     Advocacy:
         https://bikeportland.org/feed
-    Social:
+    /r/Portland:
         https://www.reddit.com/r/portland.rss
     Government:
-        https://www.oregonmetro.gov/metro-rss-feeds
+        # https://www.oregonmetro.gov/news.xml (404 - feed removed by Oregon Metro as of May 2026)
         https://www.youtube.com/feeds/videos.xml?channel_id=UCcPIUh7CWwtBXisMPHWG65g
         https://www.portland.gov/police/divisions/public-information-office/social-media
     everout.com:

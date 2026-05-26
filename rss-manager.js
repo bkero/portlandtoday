@@ -13,11 +13,36 @@ class RSSManager {
             const content = fs.readFileSync('rss-feeds.txt', 'utf8');
             const feeds = this.parseStructuredFeeds(content);
             
-            for (const feed of feeds) {
-                await this.db.addFeed(feed.url, feed.title, feed.category);
+            // Get current URLs from file
+            const feedUrls = new Set(feeds.map(feed => feed.url));
+            
+            // Get all feeds currently in database
+            const dbFeeds = await this.db.getFeeds();
+            
+            // Delete feeds that are no longer in the file
+            let deletedCount = 0;
+            for (const dbFeed of dbFeeds) {
+                if (!feedUrls.has(dbFeed.url)) {
+                    await this.db.deleteFeed(dbFeed.url);
+                    deletedCount++;
+                    console.log(`Removed feed: ${dbFeed.title} (${dbFeed.url})`);
+                }
             }
             
-            console.log(`Loaded ${feeds.length} feeds from file`);
+            // Add/update feeds from file
+            for (const feed of feeds) {
+                await this.db.addFeed(feed.url, feed.title, feed.category);
+                
+                // Check if category changed and update existing articles
+                const existingFeed = dbFeeds.find(dbFeed => dbFeed.url === feed.url);
+                if (existingFeed && existingFeed.category !== feed.category) {
+                    await this.db.updateFeedCategory(feed.url, feed.category);
+                    await this.db.updateArticlesCategoryBySource(existingFeed.title, feed.category);
+                    console.log(`Updated category for ${existingFeed.title} from "${existingFeed.category}" to "${feed.category}"`);
+                }
+            }
+            
+            console.log(`Loaded ${feeds.length} feeds from file, removed ${deletedCount} obsolete feeds`);
         } catch (error) {
             console.error('Error loading feeds from file:', error);
         }
@@ -36,19 +61,21 @@ class RSSManager {
                 continue;
             }
             
-            // Skip sections headers like "sources:" and "categories:"
+            // Process lines ending with ':' that aren't URLs
             if (trimmedLine.endsWith(':') && !trimmedLine.startsWith('http')) {
                 if (trimmedLine === 'categories:') {
                     // Stop processing when we reach categories section
                     break;
+                } else if (trimmedLine === 'sources:') {
+                    // Skip the sources header
+                    continue;
+                } else {
+                    // Category headers (like "News:", "Advocacy:", "/r/Portland:", etc.)
+                    const rawCategory = trimmedLine.slice(0, -1);
+                    // Preserve case for special categories like "/r/Portland"
+                    currentCategory = rawCategory.startsWith('/r/') ? rawCategory : rawCategory.toLowerCase();
+                    continue;
                 }
-                continue;
-            }
-            
-            // Category headers (like "News:", "Advocacy:", etc.)
-            if (trimmedLine.endsWith(':') && !trimmedLine.startsWith('http')) {
-                currentCategory = trimmedLine.slice(0, -1).toLowerCase();
-                continue;
             }
             
             // HTTP/HTTPS URLs
@@ -79,7 +106,7 @@ class RSSManager {
             const { default: fetch } = await import('node-fetch');
             const response = await fetch(feedUrl, {
                 headers: {
-                    'User-Agent': 'Mozilla/5.0 (compatible; PortlandToday/1.0)'
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
                 }
             });
             
@@ -170,10 +197,18 @@ class RSSManager {
         if (!field) return null;
         if (typeof field === 'string') return field;
         if (Array.isArray(field) && field.length > 0) {
-            return typeof field[0] === 'string' ? field[0] : field[0]._ || field[0];
+            const firstItem = field[0];
+            if (typeof firstItem === 'string') return firstItem;
+            // Handle Atom link format: { '$': { href: 'url' } }
+            if (firstItem && firstItem.$ && firstItem.$.href) return firstItem.$.href;
+            return firstItem._ || firstItem;
         }
         if (typeof field === 'object' && field._) {
             return field._;
+        }
+        // Handle single Atom link format
+        if (typeof field === 'object' && field.$ && field.$.href) {
+            return field.$.href;
         }
         return null;
     }
@@ -186,14 +221,19 @@ class RSSManager {
         if (link && typeof link === 'string' && link.includes('bikeportland.org')) {
             tags.push('bikeportland');
         }
-        // Special handling for oregonlive.com - fetch articleSection from page
+        // Special handling for oregonlive.com - extract category from URL path
         else if (link && typeof link === 'string' && link.includes('oregonlive.com')) {
-            const articleSection = await this.fetchArticleSection(link);
-            if (articleSection) {
-                console.log(`Extracted articleSection "${articleSection}" from ${link}`);
-                // Convert articleSection to tag format (lowercase, replace spaces with hyphens)
-                urlCategory = articleSection.toLowerCase().replace(/\s+/g, '-').replace(/&/g, 'and');
-                tags.push(urlCategory);
+            try {
+                const url = new URL(link);
+                const pathSegments = url.pathname.split('/').filter(segment => segment.length > 0);
+                if (pathSegments.length > 0) {
+                    urlCategory = pathSegments[0];
+                    if (urlCategory) {
+                        tags.push(urlCategory);
+                    }
+                }
+            } catch (error) {
+                // URL parsing failed, continue without URL-based category
             }
         }
         // Special handling for wweek.com URLs - extract category from path
@@ -228,19 +268,90 @@ class RSSManager {
         
         const tagKeywords = {
             'politics': ['election', 'vote', 'government', 'politics', 'policy', 'congress', 'senate'],
-            'sports': ['game', 'player', 'team', 'score', 'championship', 'season', 'sports'],
+            'sports': ['football', 'basketball', 'baseball', 'soccer', 'hockey', 'tennis', 'golf', 'volleyball', 'wrestling', 'track', 'swimming', 'championship', 'tournament', 'playoff', 'league', 'athlete', 'coach', 'stadium', 'sports', 'nfl', 'nba', 'mlb', 'mls', 'ncaa', 'ducks', 'beavers', 'blazers', 'timbers'],
             'technology': ['tech', 'software', 'app', 'digital', 'internet', 'computer', 'ai'],
             'business': ['business', 'economy', 'market', 'stock', 'company', 'financial'],
             'health': ['health', 'medical', 'hospital', 'doctor', 'medicine', 'covid'],
             'weather': ['weather', 'storm', 'rain', 'snow', 'temperature', 'forecast'],
-            'local': ['portland', 'oregon', 'local', 'community', 'neighborhood'],
+            'news': ['portland', 'oregon', 'local', 'community', 'neighborhood', 'news'],
             'crime': ['police', 'arrest', 'crime', 'investigation', 'court', 'law'],
             'education': ['school', 'student', 'education', 'university', 'college', 'teacher'],
-            'environment': ['environment', 'climate', 'green', 'sustainability', 'pollution']
+            'environment': ['environment', 'climate', 'green', 'sustainability', 'pollution'],
+            'food': ['restaurant', 'food', 'dining', 'chef', 'menu', 'recipe', 'cooking', 'kitchen', 'bar', 'cafe', 'coffee', 'brewery', 'wine', 'drink', 'meal', 'eat', 'cuisine']
         };
 
+        // Find content-based categories
+        const contentTags = [];
         Object.entries(tagKeywords).forEach(([tag, keywords]) => {
-            if (keywords.some(keyword => text.includes(keyword))) {
+            if (keywords.some(keyword => {
+                // Use word boundary matching to prevent false positives
+                // e.g., "app" should not match "appears", "ai" should not match "said"
+                const wordBoundaryRegex = new RegExp(`\\b${keyword}\\b`, 'i');
+                return wordBoundaryRegex.test(text);
+            })) {
+                contentTags.push(tag);
+            }
+        });
+
+        // For Reddit /r/Portland feed, ensure the subreddit name is the primary tag
+        if (feedCategory === '/r/Portland') {
+            const redditTag = '/r/Portland';
+            if (!tags.includes(redditTag)) {
+                tags.unshift(redditTag);
+            } else {
+                const redditIndex = tags.indexOf(redditTag);
+                if (redditIndex > 0) {
+                    tags.splice(redditIndex, 1);
+                    tags.unshift(redditTag);
+                }
+            }
+        } else if (feedCategory === 'food') {
+            // For food feeds, prioritize food category over content tags
+            // Food-specific feeds should always show in the Food category
+            if (!tags.includes('food')) {
+                tags.unshift('food');
+            } else {
+                const foodIndex = tags.indexOf('food');
+                if (foodIndex > 0) {
+                    tags.splice(foodIndex, 1);
+                    tags.unshift('food');
+                }
+            }
+            // Add content tags after food tag
+            if (contentTags.length > 0) {
+                contentTags.forEach(contentTag => {
+                    if (!tags.includes(contentTag)) {
+                        tags.push(contentTag);
+                    }
+                });
+            }
+        } else {
+            // For non-Reddit feeds, prioritize content-based categorization
+            // Use the first content-based tag as primary, fallback to feed category
+            if (contentTags.length > 0) {
+                // Remove content tags from current position and add to front
+                contentTags.forEach(contentTag => {
+                    const index = tags.indexOf(contentTag);
+                    if (index > -1) tags.splice(index, 1);
+                });
+                // Add content-based tags to the front
+                tags.unshift(...contentTags);
+            } else if (feedCategory && !tags.includes(feedCategory)) {
+                // No content tags found, use feed category as fallback
+                tags.unshift(feedCategory);
+            } else if (feedCategory && tags.includes(feedCategory)) {
+                // Move feed category to front if no content tags
+                const feedIndex = tags.indexOf(feedCategory);
+                if (feedIndex > 0) {
+                    tags.splice(feedIndex, 1);
+                    tags.unshift(feedCategory);
+                }
+            }
+        }
+
+        // Add remaining tags that weren't already included
+        contentTags.forEach(tag => {
+            if (!tags.includes(tag)) {
                 tags.push(tag);
             }
         });
