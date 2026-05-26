@@ -5,11 +5,15 @@ const url = require('url');
 const DatabaseManager = require('./database');
 const RSSManager = require('./rss-manager');
 
+const STATIC_ROOT = path.resolve(__dirname);
+const ALLOWED_STATIC = new Set(['index.html', 'app.js', 'styles.css']);
+
 class NewsServer {
     constructor() {
         this.db = new DatabaseManager();
         this.rssManager = null;
         this.isInitialized = false;
+        this.lastRefresh = 0;
         this.weatherCache = {
             data: null,
             timestamp: 0,
@@ -21,20 +25,20 @@ class NewsServer {
         try {
             await this.db.initialize();
             this.rssManager = new RSSManager(this.db);
-            
+
             // Load feeds from file on startup
             await this.rssManager.loadFeedsFromFile();
-            
+
             // Refresh feeds every hour
             this.refreshInterval = setInterval(() => {
                 this.rssManager.refreshAllFeeds().catch(console.error);
             }, 60 * 60 * 1000); // 1 hour
-            
+
             // Initial refresh
             setTimeout(() => {
                 this.rssManager.refreshAllFeeds().catch(console.error);
             }, 2000); // Wait 2 seconds after startup
-            
+
             this.isInitialized = true;
             console.log('News server initialized successfully');
         } catch (error) {
@@ -47,14 +51,30 @@ class NewsServer {
         const parsedUrl = url.parse(req.url, true);
         const pathname = parsedUrl.pathname;
 
-        // Enable CORS
-        res.setHeader('Access-Control-Allow-Origin', '*');
+        // Security headers on every response
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('X-Frame-Options', 'DENY');
+        res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+        res.setHeader('Content-Security-Policy',
+            "default-src 'self'; script-src 'self'; style-src 'self'; " +
+            "img-src 'none'; connect-src 'self'; frame-ancestors 'none'; " +
+            "object-src 'none'; base-uri 'self'; form-action 'self'");
+
+        // CORS: allow same origin for GET reads; POST endpoints enforce token auth separately
+        res.setHeader('Access-Control-Allow-Origin', 'https://pdx.today');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
         if (req.method === 'OPTIONS') {
             res.writeHead(200);
             res.end();
+            return;
+        }
+
+        // Health check (used by Kubernetes liveness/readiness probes)
+        if (pathname === '/healthz') {
+            res.writeHead(this.isInitialized ? 200 : 503, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ status: this.isInitialized ? 'ok' : 'initializing' }));
             return;
         }
 
@@ -83,7 +103,9 @@ class NewsServer {
 
         try {
             if (pathname === '/api/articles') {
-                const limit = parseInt(query.limit) || 100;
+                // Clamp limit: minimum 1, maximum 500, default 100.
+                // parseInt('-1') is truthy so || fallback would allow LIMIT -1 (all rows).
+                const limit = Math.min(Math.max(parseInt(query.limit) || 100, 1), 500);
                 const articles = await this.db.getArticles(limit);
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify(articles));
@@ -96,7 +118,26 @@ class NewsServer {
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify(weather));
             } else if (pathname === '/api/refresh' && req.method === 'POST') {
-                // Trigger manual refresh
+                // If REFRESH_TOKEN env var is set, require a matching Bearer token.
+                const expectedToken = process.env.REFRESH_TOKEN;
+                if (expectedToken) {
+                    const authHeader = req.headers['authorization'] || '';
+                    const provided = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : '';
+                    if (provided !== expectedToken) {
+                        res.writeHead(401, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ error: 'Unauthorized' }));
+                        return;
+                    }
+                }
+                // Debounce: refuse if a refresh ran in the last 5 minutes.
+                const now = Date.now();
+                const cooldownMs = 5 * 60 * 1000;
+                if (now - this.lastRefresh < cooldownMs) {
+                    res.writeHead(429, { 'Content-Type': 'application/json' });
+                    res.end(JSON.stringify({ error: 'Refresh cooldown active, try again later' }));
+                    return;
+                }
+                this.lastRefresh = now;
                 this.rssManager.refreshAllFeeds().catch(console.error);
                 res.writeHead(200, { 'Content-Type': 'application/json' });
                 res.end(JSON.stringify({ message: 'Refresh started' }));
@@ -130,20 +171,31 @@ class NewsServer {
     }
 
     serveStaticFile(req, res, pathname) {
-        let filePath = '.' + pathname;
-        if (filePath === './') {
-            filePath = './index.html';
+        // Resolve the requested path and confirm it stays inside the web root.
+        // path.resolve normalises any '..' sequences before the check.
+        const requestedPath = path.resolve(STATIC_ROOT, '.' + pathname);
+        const filename = pathname === '/' ? 'index.html' : path.basename(requestedPath);
+
+        if (!requestedPath.startsWith(STATIC_ROOT + path.sep) && requestedPath !== STATIC_ROOT) {
+            res.writeHead(403);
+            res.end('Forbidden');
+            return;
         }
 
-        const extname = String(path.extname(filePath)).toLowerCase();
+        // Serve only an explicit allowlist of files.
+        if (!ALLOWED_STATIC.has(filename)) {
+            res.writeHead(404);
+            res.end('Not found');
+            return;
+        }
+
+        const filePath = path.join(STATIC_ROOT, filename);
+        const extname = path.extname(filePath).toLowerCase();
         const mimeTypes = {
             '.html': 'text/html',
             '.js': 'text/javascript',
             '.css': 'text/css',
-            '.json': 'application/json',
-            '.txt': 'text/plain'
         };
-
         const contentType = mimeTypes[extname] || 'application/octet-stream';
 
         fs.readFile(filePath, (error, content) => {
@@ -190,37 +242,35 @@ class NewsServer {
         }
 
         try {
-            // Using a free weather API (OpenWeatherMap alternative)
-            // For demo purposes, we'll use a mock weather service or simple API
             const { default: fetch } = await import('node-fetch');
-            
+
             // Portland, OR coordinates
             const lat = 45.5152;
             const lon = -122.6784;
-            
+
             // Using Open-Meteo (free, no API key required)
             const weatherUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current_weather=true&temperature_unit=fahrenheit&timezone=America/Los_Angeles`;
-            
+
             const response = await fetch(weatherUrl);
             if (!response.ok) {
                 throw new Error(`Weather API error: ${response.status}`);
             }
-            
+
             const data = await response.json();
             const current = data.current_weather;
-            
+
             const weatherData = {
                 temperature: Math.round(current.temperature),
                 description: this.getWeatherDescription(current.weathercode),
                 timestamp: now
             };
-            
+
             // Cache the result
             this.weatherCache.data = weatherData;
             this.weatherCache.timestamp = now;
-            
+
             return weatherData;
-            
+
         } catch (error) {
             console.error('Weather API error:', error);
             return {
@@ -253,7 +303,7 @@ class NewsServer {
             82: 'Heavy Showers',
             95: 'Thunderstorm'
         };
-        
+
         return weatherCodes[code] || 'Unknown';
     }
 
@@ -261,56 +311,54 @@ class NewsServer {
         try {
             // Get recent articles (last 30 days, limit 50 for RSS)
             const articles = await this.db.getArticles(50);
-            
+
             // Filter to articles from last 30 days
             const thirtyDaysAgo = new Date();
             thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-            
-            const recentArticles = articles.filter(article => 
+
+            const recentArticles = articles.filter(article =>
                 new Date(article.pub_date) >= thirtyDaysAgo
             );
 
             const now = new Date();
             const buildDate = now.toUTCString();
-            
-            // Generate RSS XML
+
             let rssXml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
 <channel>
     <title>Portland Today - Composite Feed</title>
-    <link>http://localhost:3000/</link>
+    <link>https://pdx.today/</link>
     <description>Aggregated news from Portland area sources</description>
     <language>en-us</language>
     <lastBuildDate>${buildDate}</lastBuildDate>
-    <atom:link href="http://localhost:3000/rss" rel="self" type="application/rss+xml" />
+    <atom:link href="https://pdx.today/rss" rel="self" type="application/rss+xml" />
     <generator>Portland Today News Aggregator</generator>
     <managingEditor>noreply@portlandtoday.local (Portland Today)</managingEditor>
     <webMaster>noreply@portlandtoday.local (Portland Today)</webMaster>
 `;
 
-            // Add articles as RSS items
             recentArticles.forEach(article => {
                 const pubDate = new Date(article.pub_date).toUTCString();
                 const escapedTitle = this.escapeXml(article.title);
                 const escapedDescription = this.escapeXml(article.description || '');
                 const escapedSource = this.escapeXml(article.source);
+                // Escape link to prevent XML injection; validate it is an http(s) URL.
+                const safeLink = /^https?:\/\//.test(article.link) ? this.escapeXml(article.link) : '';
                 let categories = [];
                 try {
                     categories = JSON.parse(article.tags || '[]');
                 } catch (e) {
-                    // Handle case where tags might be stored as a string
                     categories = article.tags ? [article.tags] : [];
                 }
-                
+
                 rssXml += `    <item>
         <title>${escapedTitle}</title>
-        <link>${article.link}</link>
+        <link>${safeLink}</link>
         <description>${escapedDescription}</description>
         <pubDate>${pubDate}</pubDate>
-        <guid isPermaLink="true">${article.link}</guid>
+        <guid isPermaLink="true">${safeLink}</guid>
         <source>${escapedSource}</source>`;
 
-                // Add categories as RSS categories
                 categories.forEach(category => {
                     rssXml += `
         <category>${this.escapeXml(category)}</category>`;
@@ -325,14 +373,14 @@ class NewsServer {
 </rss>`;
 
             return rssXml;
-            
+
         } catch (error) {
             console.error('Error generating RSS feed:', error);
             return `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0">
 <channel>
     <title>Portland Today - Error</title>
-    <link>http://localhost:3000/</link>
+    <link>https://pdx.today/</link>
     <description>RSS feed temporarily unavailable</description>
     <item>
         <title>RSS Feed Error</title>

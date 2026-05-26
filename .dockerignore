@@ -1,0 +1,14 @@
+node_modules
+*.db
+*.db-shm
+*.db-wal
+*.swp
+*.swo
+.git
+notes
+CLAUDE.md
+test-*.js
+debug-*.js
+cleanup-*.js
+complete-cleanup.js
+verify-cleanup.js

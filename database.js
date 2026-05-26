@@ -7,8 +7,9 @@ class DatabaseManager {
     }
 
     async initialize() {
+        const dbPath = process.env.DB_PATH || path.join(__dirname, 'news.db');
         return new Promise((resolve, reject) => {
-            this.db = new sqlite3.Database('news.db', (err) => {
+            this.db = new sqlite3.Database(dbPath, (err) => {
                 if (err) {
                     reject(err);
                 } else {
@@ -140,6 +141,92 @@ class DatabaseManager {
                 } else {
                     resolve();
                 }
+            });
+        });
+    }
+
+    async deleteFeed(url) {
+        return new Promise((resolve, reject) => {
+            this.db.run('DELETE FROM feeds WHERE url = ?', [url], function(err) {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(this.changes);
+                }
+            });
+        });
+    }
+
+    async updateFeedCategory(url, category) {
+        return new Promise((resolve, reject) => {
+            this.db.run('UPDATE feeds SET category = ? WHERE url = ?', [category, url], function(err) {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(this.changes);
+                }
+            });
+        });
+    }
+
+    async updateArticlesCategoryBySource(source, category) {
+        return new Promise((resolve, reject) => {
+            this.db.run('UPDATE articles SET category = ? WHERE source = ?', [category, source], function(err) {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(this.changes);
+                }
+            });
+        });
+    }
+
+    async updateArticleTagsBySource(source, newPrimaryTag) {
+        return new Promise((resolve, reject) => {
+            // First get all articles for this source
+            this.db.all('SELECT id, tags FROM articles WHERE source = ?', [source], (err, rows) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+
+                // Update each article's tags to have newPrimaryTag as first element
+                let updated = 0;
+                let completed = 0;
+                const total = rows.length;
+
+                if (total === 0) {
+                    resolve(0);
+                    return;
+                }
+
+                rows.forEach(row => {
+                    try {
+                        const currentTags = JSON.parse(row.tags || '[]');
+                        // Remove the new primary tag if it exists elsewhere in the array
+                        const filteredTags = currentTags.filter(tag => tag !== newPrimaryTag);
+                        // Add the new primary tag at the beginning
+                        const newTags = [newPrimaryTag, ...filteredTags];
+                        
+                        this.db.run('UPDATE articles SET tags = ? WHERE id = ?', [JSON.stringify(newTags), row.id], (updateErr) => {
+                            completed++;
+                            if (!updateErr) updated++;
+                            
+                            if (completed === total) {
+                                if (updated === total) {
+                                    resolve(updated);
+                                } else {
+                                    reject(new Error(`Updated ${updated}/${total} articles`));
+                                }
+                            }
+                        });
+                    } catch (parseErr) {
+                        completed++;
+                        if (completed === total) {
+                            resolve(updated);
+                        }
+                    }
+                });
             });
         });
     }

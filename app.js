@@ -3,7 +3,8 @@ class NewsAggregator {
         this.articles = [];
         this.categories = new Set();
         this.showDetails = false;
-        this.todayOnly = true; // Default to showing only today's articles
+        this.todayOnly = true;
+        this.newsExpanded = false;
         this.initializeElements();
         this.bindEvents();
         this.loadArticles();
@@ -19,8 +20,10 @@ class NewsAggregator {
             loading: document.getElementById('loading'),
             error: document.getElementById('error'),
             articlesContainer: document.getElementById('articles-container'),
+            headerNewsSection: document.getElementById('header-news-section'),
             weatherSection: document.getElementById('weather-section'),
             weatherDisplay: document.getElementById('weather-display'),
+            weatherIcon: document.getElementById('weather-icon'),
             weatherTemp: document.getElementById('weather-temp'),
             weatherDesc: document.getElementById('weather-desc'),
             weatherError: document.getElementById('weather-error'),
@@ -34,13 +37,12 @@ class NewsAggregator {
         this.elements.categoryFilter.addEventListener('change', () => this.filterArticles());
         this.elements.detailToggle.addEventListener('change', () => this.toggleDetails());
         this.elements.todayToggle.addEventListener('change', () => this.toggleTodayFilter());
-        
+
         // Add window resize listener to recalculate iframe heights
         window.addEventListener('resize', () => this.handleResize());
     }
 
     handleResize() {
-        // Debounce resize events
         clearTimeout(this.resizeTimeout);
         this.resizeTimeout = setTimeout(() => {
             this.updateIframeHeights();
@@ -49,30 +51,22 @@ class NewsAggregator {
 
     toggleDetails() {
         this.showDetails = this.elements.detailToggle.checked;
-        
-        // Refresh the display to show/hide details
         this.displayArticles();
     }
 
     toggleTodayFilter() {
         this.todayOnly = this.elements.todayToggle.checked;
-        
-        // Refresh the display with new filter
         this.filterArticles();
     }
 
     updateIframeHeights() {
-        // Recalculate heights for all existing iframes
         const iframes = document.querySelectorAll('.category-iframe');
-        iframes.forEach((iframe, index) => {
+        iframes.forEach((iframe) => {
             const categorySection = iframe.closest('.category-section');
             const categoryTitle = categorySection.querySelector('.category-title').textContent.toLowerCase();
-            
-            // Find articles for this category
             const articlesByCategory = this.groupArticlesByCategory(this.articles);
             const articles = articlesByCategory[categoryTitle] || [];
-            
-            const newHeight = this.calculateIframeHeight(articles.length);
+            const newHeight = this.calculateIframeHeight(articles.length, categoryTitle);
             iframe.style.height = newHeight + 'px';
         });
     }
@@ -80,15 +74,10 @@ class NewsAggregator {
     async refreshAllFeeds() {
         try {
             this.showLoading(true);
-            
-            // Trigger server refresh
             await fetch('/api/refresh', { method: 'POST' });
-            
-            // Wait a moment for refresh to start
             setTimeout(() => {
                 this.loadArticles();
             }, 1000);
-            
         } catch (error) {
             console.error('Error refreshing feeds:', error);
             this.showError('Failed to refresh feeds');
@@ -98,13 +87,13 @@ class NewsAggregator {
 
     async loadArticlesFromAPI() {
         try {
-            const response = await fetch('/api/articles?limit=200');
+            const response = await fetch('/api/articles?limit=500');
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
-            
+
             const articles = await response.json();
-            
+
             // Transform articles to match frontend format
             this.articles = articles.map(article => ({
                 title: article.title,
@@ -114,17 +103,17 @@ class NewsAggregator {
                 source: article.source,
                 tags: article.tags
             }));
-            
+
             // Update categories based on current filter settings
             this.categories.clear();
             let filteredArticles;
-            
+
             if (this.todayOnly) {
                 const today = new Date();
                 today.setHours(0, 0, 0, 0);
                 const tomorrow = new Date(today);
                 tomorrow.setDate(tomorrow.getDate() + 1);
-                
+
                 filteredArticles = this.articles.filter(article => {
                     const articleDate = new Date(article.date);
                     return articleDate >= today && articleDate < tomorrow;
@@ -132,18 +121,18 @@ class NewsAggregator {
             } else {
                 const oneMonthAgo = new Date();
                 oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-                
+
                 filteredArticles = this.articles.filter(article => article.date >= oneMonthAgo);
             }
-            
+
             filteredArticles.forEach(article => {
                 article.tags.forEach(tag => this.categories.add(tag));
             });
-            
+
             this.updateCategoryFilter();
-            this.filterArticles(); // Use filterArticles to apply today filter by default
+            this.filterArticles();
             this.hideError();
-            
+
         } catch (error) {
             console.error('Error loading articles:', error);
             this.showError('Failed to load articles from server');
@@ -155,11 +144,11 @@ class NewsAggregator {
     updateCategoryFilter() {
         const currentValue = this.elements.categoryFilter.value;
         this.elements.categoryFilter.innerHTML = '<option value="all">All Categories</option>';
-        
+
         // Get categories that have recent articles
         const articlesByCategory = this.groupArticlesByCategory(this.articles);
         const recentCategories = Object.keys(articlesByCategory);
-        
+
         recentCategories.sort().forEach(category => {
             const option = document.createElement('option');
             option.value = category;
@@ -174,43 +163,36 @@ class NewsAggregator {
 
     filterArticles() {
         const selectedCategory = this.elements.categoryFilter.value;
-        
-        // Start with all articles
         let filteredArticles = this.articles;
-        
-        // Apply today filter if enabled
+
         if (this.todayOnly) {
             const today = new Date();
-            today.setHours(0, 0, 0, 0); // Start of today
+            today.setHours(0, 0, 0, 0);
             const tomorrow = new Date(today);
-            tomorrow.setDate(tomorrow.getDate() + 1); // Start of tomorrow
-            
+            tomorrow.setDate(tomorrow.getDate() + 1);
+
             filteredArticles = filteredArticles.filter(article => {
                 const articleDate = new Date(article.date);
                 return articleDate >= today && articleDate < tomorrow;
             });
         } else {
-            // If not today only, filter to recent articles (last month)
             const oneMonthAgo = new Date();
             oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-            
-            filteredArticles = filteredArticles.filter(article => {
-                return article.date >= oneMonthAgo;
-            });
+            filteredArticles = filteredArticles.filter(article => article.date >= oneMonthAgo);
         }
-        
-        // Then filter by selected category
+
         if (selectedCategory !== 'all') {
-            filteredArticles = filteredArticles.filter(article => 
+            filteredArticles = filteredArticles.filter(article =>
                 article.tags.includes(selectedCategory)
             );
         }
-        
+
         this.displayArticles(filteredArticles);
     }
 
     displayArticles(articlesToShow = this.articles) {
         this.elements.articlesContainer.innerHTML = '';
+        this.elements.headerNewsSection.innerHTML = '';
 
         if (articlesToShow.length === 0) {
             this.elements.articlesContainer.innerHTML = `
@@ -221,125 +203,159 @@ class NewsAggregator {
             return;
         }
 
-        // Group articles by their primary tag/category
         const articlesByCategory = this.groupArticlesByCategory(articlesToShow);
-        
-        // Create category sections
+
+        // Create News section in header area
+        if (articlesByCategory.news) {
+            const newsSection = this.createHeaderNewsSection(articlesByCategory.news);
+            this.elements.headerNewsSection.appendChild(newsSection);
+        }
+
+        // Add all other sections directly to the grid container
         Object.entries(articlesByCategory).forEach(([category, articles]) => {
-            const categorySection = this.createCategorySection(category, articles);
-            this.elements.articlesContainer.appendChild(categorySection);
+            if (category !== 'news') {
+                const categorySection = this.createCategorySection(category, articles);
+                this.elements.articlesContainer.appendChild(categorySection);
+            }
         });
     }
 
     groupArticlesByCategory(articles) {
-        // Filter articles based on current filter settings
         let recentArticles;
-        
+
         if (this.todayOnly) {
-            // Filter to today's articles only
             const today = new Date();
             today.setHours(0, 0, 0, 0);
             const tomorrow = new Date(today);
             tomorrow.setDate(tomorrow.getDate() + 1);
-            
+
             recentArticles = articles.filter(article => {
                 const articleDate = new Date(article.date);
                 return articleDate >= today && articleDate < tomorrow;
             });
         } else {
-            // Filter articles to only include those from the last month
             const oneMonthAgo = new Date();
             oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-            
-            recentArticles = articles.filter(article => {
-                return article.date >= oneMonthAgo;
-            });
+            recentArticles = articles.filter(article => article.date >= oneMonthAgo);
         }
-        
+
         const grouped = {};
-        
+
         recentArticles.forEach(article => {
-            // Use the first tag as the primary category
             const primaryCategory = article.tags[0] || 'general';
-            
             if (!grouped[primaryCategory]) {
                 grouped[primaryCategory] = [];
             }
             grouped[primaryCategory].push(article);
         });
-        
-        // Only return categories that have articles
-        const categoriesWithArticles = Object.keys(grouped).filter(category => {
-            return grouped[category].length > 0;
-        });
-        
-        // Sort categories by name, but put 'local' and 'news' first
+
+        const categoriesWithArticles = Object.keys(grouped).filter(category =>
+            grouped[category].length > 0
+        );
+
         const sortedCategories = categoriesWithArticles.sort((a, b) => {
             const priority = { 'local': 0, 'news': 1, 'politics': 2, 'business': 3 };
             const aPriority = priority[a] !== undefined ? priority[a] : 99;
             const bPriority = priority[b] !== undefined ? priority[b] : 99;
-            
+
             if (aPriority !== bPriority) {
                 return aPriority - bPriority;
             }
             return a.localeCompare(b);
         });
-        
+
         const sortedGrouped = {};
         sortedCategories.forEach(category => {
             sortedGrouped[category] = grouped[category];
         });
-        
+
         return sortedGrouped;
+    }
+
+    createHeaderNewsSection(articles) {
+        const newsDiv = document.createElement('div');
+        newsDiv.className = 'header-news-content';
+
+        const newsTitle = document.createElement('h2');
+        newsTitle.className = 'header-news-title';
+        newsTitle.textContent = 'News';
+
+        const iframe = document.createElement('iframe');
+        iframe.className = 'header-news-iframe';
+        iframe.setAttribute('scrolling', 'yes');
+        iframe.setAttribute('frameborder', '0');
+
+        const dynamicHeight = this.calculateIframeHeight(articles.length, 'news');
+        iframe.style.height = dynamicHeight + 'px';
+
+        const iframeContent = this.createIframeContent(articles, this.showDetails, this.todayOnly);
+        iframe.src = 'data:text/html;charset=utf-8,' + encodeURIComponent(iframeContent);
+
+        newsDiv.appendChild(newsTitle);
+        newsDiv.appendChild(iframe);
+
+        // Add expand button if there are more than 3 articles
+        if (articles.length > 3) {
+            const buttonContainer = document.createElement('div');
+            buttonContainer.className = 'news-expand-container';
+
+            const expandButton = document.createElement('button');
+            expandButton.className = 'news-expand-button';
+            expandButton.innerHTML = this.newsExpanded ? '▲' : '▼';
+            expandButton.addEventListener('click', () => this.toggleNewsExpansion());
+
+            buttonContainer.appendChild(expandButton);
+            newsDiv.appendChild(buttonContainer);
+        }
+
+        return newsDiv;
+    }
+
+    toggleNewsExpansion() {
+        this.newsExpanded = !this.newsExpanded;
+        this.displayArticles();
     }
 
     createCategorySection(category, articles) {
         const sectionDiv = document.createElement('div');
         sectionDiv.className = 'category-section';
-        
+
         const categoryTitle = document.createElement('h2');
         categoryTitle.className = 'category-title';
         categoryTitle.textContent = category.charAt(0).toUpperCase() + category.slice(1);
-        
+
         const iframe = document.createElement('iframe');
         iframe.className = 'category-iframe';
         iframe.setAttribute('scrolling', 'yes');
         iframe.setAttribute('frameborder', '0');
-        
-        // Calculate dynamic height based on article count
-        const dynamicHeight = this.calculateIframeHeight(articles.length);
+
+        const dynamicHeight = this.calculateIframeHeight(articles.length, category);
         iframe.style.height = dynamicHeight + 'px';
-        
-        // Create HTML content for the iframe
-        const iframeContent = this.createIframeContent(articles, this.showDetails);
+
+        const iframeContent = this.createIframeContent(articles, this.showDetails, this.todayOnly);
         iframe.src = 'data:text/html;charset=utf-8,' + encodeURIComponent(iframeContent);
-        
+
         sectionDiv.appendChild(categoryTitle);
         sectionDiv.appendChild(iframe);
-        
+
         return sectionDiv;
     }
 
-    calculateIframeHeight(articleCount) {
-        // Responsive settings based on screen width
+    calculateIframeHeight(articleCount, category = '') {
         const isMobile = window.innerWidth <= 768;
-        
-        // Base height for iframe container and padding
         const baseHeight = 40;
-        
-        // Height per article row (approximate)
-        const articleRowHeight = isMobile ? 90 : 80; // Slightly taller on mobile
-        
-        // Maximum height (for scrolling when there are many articles)
-        const maxHeight = isMobile ? 250 : 300;
-        
-        // Minimum height (for at least one article display)
+        const articleRowHeight = isMobile ? 90 : 80;
+        let maxHeight = isMobile ? 250 : 300;
         const minHeight = isMobile ? 100 : 120;
-        
-        // Calculate height based on article count
+
+        // Fixed height for News section (3 articles by default, expanded when newsExpanded is true)
+        if (category.toLowerCase() === 'news') {
+            const articleDisplayCount = this.newsExpanded ? 10 : 3;
+            return baseHeight + (articleDisplayCount * articleRowHeight);
+        }
+
         const calculatedHeight = baseHeight + (articleCount * articleRowHeight);
-        
-        // Apply constraints
+
         if (calculatedHeight < minHeight) {
             return minHeight;
         } else if (calculatedHeight > maxHeight) {
@@ -349,10 +365,26 @@ class NewsAggregator {
         }
     }
 
-    createIframeContent(articles, showDetails = false) {
-        const articlesHtml = articles.map(article => this.createArticleRow(article)).join('');
+    // Returns an HTML-escaped version of a string safe for use in innerHTML contexts.
+    escapeHtml(str) {
+        return String(str ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#039;');
+    }
+
+    // Returns the URL if it is an http/https link, otherwise returns '#' to
+    // prevent javascript: URIs or other non-http schemes from executing.
+    safeUrl(url) {
+        return /^https?:\/\//i.test(url) ? url : '#';
+    }
+
+    createIframeContent(articles, showDetails = false, todayOnly = false) {
+        const articlesHtml = articles.map(article => this.createArticleRow(article, todayOnly)).join('');
         const containerClass = showDetails ? 'articles-container show-details' : 'articles-container';
-        
+
         return `
 <!DOCTYPE html>
 <html>
@@ -378,9 +410,12 @@ class NewsAggregator {
             border-left: 3px solid #667eea;
             transition: box-shadow 0.2s, background-color 0.2s;
             display: grid;
-            grid-template-columns: 2fr 1fr 1fr;
+            grid-template-columns: 1fr;
             gap: 1rem;
             align-items: start;
+        }
+        .show-details .article-row {
+            grid-template-columns: 1fr auto auto;
         }
         .article-row:hover {
             box-shadow: 0 2px 8px rgba(0,0,0,0.15);
@@ -462,67 +497,45 @@ class NewsAggregator {
 </html>`;
     }
 
-    createArticleRow(article) {
+    createArticleRow(article, todayOnly = false) {
         const formattedDate = article.date.toLocaleDateString('en-US', {
             month: 'short',
             day: 'numeric',
             hour: '2-digit',
             minute: '2-digit'
         });
+
+        const safeLink = this.safeUrl(article.link);
+        const safeTitle = this.escapeHtml(article.title);
+        const safeDescription = this.escapeHtml(
+            article.description.slice(0, 100) + (article.description.length > 100 ? '...' : '')
+        );
+        const safeSource = this.escapeHtml(article.source);
+        const safeTags = article.tags.map(tag =>
+            `<span class="tag">${this.escapeHtml(tag)}</span>`
+        ).join('');
+        const safeDateSpan = todayOnly ? '' : `<span class="article-date">${this.escapeHtml(formattedDate)}</span>`;
 
         return `
             <div class="article-row">
                 <div class="article-title-section">
                     <div class="title-date-row">
-                        <a href="${article.link}" target="_blank" class="article-title">
-                            ${article.title}
+                        <a href="${safeLink}" target="_blank" rel="noopener noreferrer" class="article-title">
+                            ${safeTitle}
                         </a>
-                        <span class="article-date">
-                            ${formattedDate}
-                        </span>
+                        ${safeDateSpan}
                     </div>
                     <div class="article-description">
-                        ${article.description.slice(0, 100)}${article.description.length > 100 ? '...' : ''}
+                        ${safeDescription}
                     </div>
                 </div>
                 <div class="article-source">
-                    ${article.source}
+                    ${safeSource}
                 </div>
                 <div class="article-tags">
-                    ${article.tags.map(tag => `<span class="tag">${tag}</span>`).join('')}
+                    ${safeTags}
                 </div>
             </div>`;
-    }
-
-    createArticleElement(article) {
-        const articleDiv = document.createElement('div');
-        articleDiv.className = 'article-card';
-        
-        const formattedDate = article.date.toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-
-        articleDiv.innerHTML = `
-            <a href="${article.link}" target="_blank" class="article-title">
-                ${article.title}
-            </a>
-            <div class="article-meta">
-                <span class="article-source">${article.source}</span>
-                <span class="article-date">${formattedDate}</span>
-            </div>
-            <div class="article-description">
-                ${article.description.slice(0, 200)}${article.description.length > 200 ? '...' : ''}
-            </div>
-            <div class="article-tags">
-                ${article.tags.map(tag => `<span class="tag">${tag}</span>`).join('')}
-            </div>
-        `;
-
-        return articleDiv;
     }
 
     showLoading(show) {
@@ -550,9 +563,9 @@ class NewsAggregator {
             if (!response.ok) {
                 throw new Error(`HTTP error! status: ${response.status}`);
             }
-            
+
             const weather = await response.json();
-            
+
             if (weather.error) {
                 this.showWeatherError(weather.error);
             } else {
@@ -564,25 +577,37 @@ class NewsAggregator {
         }
     }
 
+    getWeatherIcon(description) {
+        const desc = description.toLowerCase();
+
+        if (desc.includes('clear')) return '☀️';
+        if (desc.includes('partly cloudy') || desc.includes('mainly clear')) return '⛅';
+        if (desc.includes('cloudy') || desc.includes('overcast')) return '☁️';
+        if (desc.includes('rain') || desc.includes('shower')) return '🌧️';
+        if (desc.includes('thunderstorm') || desc.includes('storm')) return '⛈️';
+        if (desc.includes('snow')) return '❄️';
+        if (desc.includes('fog')) return '🌫️';
+        if (desc.includes('wind')) return '💨';
+
+        return '🌤️';
+    }
+
     displayWeather(weather) {
-        // Hide loading and error states
         const loadingElement = this.elements.weatherSection.querySelector('.weather-loading');
         if (loadingElement) loadingElement.classList.add('hidden');
         this.elements.weatherError.classList.add('hidden');
-        
-        // Show and update weather display
+
         this.elements.weatherDisplay.classList.remove('hidden');
+        this.elements.weatherIcon.textContent = this.getWeatherIcon(weather.description);
         this.elements.weatherTemp.textContent = `${weather.temperature}°F`;
         this.elements.weatherDesc.textContent = weather.description;
     }
 
     showWeatherError(message) {
-        // Hide loading and display states
         const loadingElement = this.elements.weatherSection.querySelector('.weather-loading');
         if (loadingElement) loadingElement.classList.add('hidden');
         this.elements.weatherDisplay.classList.add('hidden');
-        
-        // Show error
+
         this.elements.weatherError.classList.remove('hidden');
         this.elements.weatherError.textContent = message;
     }
