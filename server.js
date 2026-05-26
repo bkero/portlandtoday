@@ -48,6 +48,12 @@ class NewsServer {
     }
 
     handleRequest(req, res) {
+        const start = Date.now();
+        res.on('finish', () => {
+            const ms = Date.now() - start;
+            console.log(`${req.method} ${req.url} ${res.statusCode} ${ms}ms`);
+        });
+
         const parsedUrl = url.parse(req.url, true);
         const pathname = parsedUrl.pathname;
 

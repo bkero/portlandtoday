@@ -13,8 +13,6 @@ class NewsAggregator {
 
     initializeElements() {
         this.elements = {
-            rssInput: document.getElementById('rss-input'),
-            addFeedBtn: document.getElementById('add-feed'),
             categoryFilter: document.getElementById('category-filter'),
             refreshBtn: document.getElementById('refresh-feeds'),
             loading: document.getElementById('loading'),

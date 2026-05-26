@@ -1,10 +1,12 @@
-FROM node:24-alpine
-
+FROM node:24-alpine AS builder
 RUN apk add --no-cache python3 make g++
-
 WORKDIR /app
-COPY package.json .
-RUN npm install
-COPY . .
+COPY package.json package-lock.json ./
+RUN npm ci
+
+FROM node:24-alpine
+WORKDIR /app
+COPY --from=builder /app/node_modules ./node_modules
+COPY server.js database.js rss-manager.js app.js index.html styles.css rss-feeds.txt package.json ./
 EXPOSE 3000
-CMD ["npm", "start"]
+CMD ["node", "server.js"]

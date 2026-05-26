@@ -4,7 +4,6 @@ class RSSManager {
     constructor(db) {
         this.db = db;
         this.parser = new xml2js.Parser();
-        this.articleSectionCache = new Map(); // Cache for articleSection lookups
     }
 
     async loadFeedsFromFile() {
@@ -376,55 +375,6 @@ class RSSManager {
         }
 
         return [...new Set(tags)];
-    }
-
-    async fetchArticleSection(link) {
-        // Check cache first
-        if (this.articleSectionCache.has(link)) {
-            return this.articleSectionCache.get(link);
-        }
-
-        try {
-            const { default: fetch } = await import('node-fetch');
-            const response = await fetch(link, {
-                headers: {
-                    'User-Agent': 'Mozilla/5.0 (compatible; PortlandToday/1.0)'
-                },
-                timeout: 5000 // 5 second timeout
-            });
-
-            if (!response.ok) {
-                throw new Error(`HTTP error! status: ${response.status}`);
-            }
-
-            const html = await response.text();
-            
-            // Look for articleSection in JSON-LD structured data
-            const jsonLdMatch = html.match(/"articleSection"\s*:\s*"([^"]+)"/);
-            if (jsonLdMatch) {
-                const section = jsonLdMatch[1];
-                this.articleSectionCache.set(link, section);
-                return section;
-            }
-
-            // Fallback: look for meta property article:section
-            const metaMatch = html.match(/<meta\s+property="article:section"\s+content="([^"]+)"/);
-            if (metaMatch) {
-                // Decode HTML entities like &amp;
-                const section = metaMatch[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>');
-                this.articleSectionCache.set(link, section);
-                return section;
-            }
-
-            // No section found
-            this.articleSectionCache.set(link, null);
-            return null;
-
-        } catch (error) {
-            console.error(`Error fetching articleSection from ${link}:`, error.message);
-            this.articleSectionCache.set(link, null);
-            return null;
-        }
     }
 
     cleanText(text) {

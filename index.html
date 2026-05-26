@@ -32,21 +32,22 @@
             <div class="weather-section" id="weather-section">
                 <div class="weather-loading">Loading weather...</div>
                 <div class="weather-display hidden" id="weather-display">
-                    <div class="weather-temp" id="weather-temp">--°</div>
+                    <div class="weather-main">
+                        <div class="weather-icon" id="weather-icon">☀️</div>
+                        <div class="weather-temp" id="weather-temp">--°</div>
+                    </div>
                     <div class="weather-desc" id="weather-desc">--</div>
                     <div class="weather-location">Portland, OR</div>
                 </div>
                 <div class="weather-error hidden" id="weather-error">Weather unavailable</div>
             </div>
         </div>
+        <div class="header-news-section" id="header-news-section">
+        </div>
     </header>
 
     <main>
         <section class="controls">
-            <div class="feed-controls">
-                <input type="url" id="rss-input" placeholder="Enter RSS feed URL...">
-                <button id="add-feed">Add Feed</button>
-            </div>
             <div class="filter-controls">
                 <select id="category-filter">
                     <option value="all">All Categories</option>
