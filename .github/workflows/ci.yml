@@ -56,6 +56,29 @@ jobs:
           echo "Server did not become healthy in time"
           exit 1
 
+  visual-test:
+    name: Visual regression tests
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright browsers
+        run: npx playwright install chromium --with-deps
+      - name: Run visual tests against live site
+        run: npx playwright test --reporter=list
+      - name: Upload screenshots on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-screenshots
+          path: tests/snapshots/
+          retention-days: 7
+
   docker-scan:
     name: Docker build + Trivy scan
     runs-on: ubuntu-latest

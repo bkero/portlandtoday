@@ -1,5 +1,66 @@
 const xml2js = require('xml2js');
 
+// Maps raw URL path segments (from oregonlive.com, wweek.com, etc.) to canonical display categories.
+// Any segment not in this map falls through to keyword-based content matching.
+const URL_CATEGORY_MAP = {
+    // Sports teams and sections
+    'ducks': 'sports',
+    'beavers': 'sports',
+    'blazers': 'sports',
+    'timbers': 'sports',
+    'thorns': 'sports',
+    'nfl': 'sports',
+    'nba': 'sports',
+    'mlb': 'sports',
+    'mls': 'sports',
+    'high-school-sports': 'sports',
+    'college-sports': 'sports',
+    'oregon-ducks': 'sports',
+    'oregon-beavers': 'sports',
+    'portland-trail-blazers': 'sports',
+    'portland-timbers': 'sports',
+    'sports': 'sports',
+    // Crime / public safety
+    'crime': 'crime',
+    'public-safety': 'crime',
+    // Politics / government
+    'politics': 'politics',
+    'oregon-politics': 'politics',
+    'government': 'politics',
+    // Business / economy
+    'business': 'business',
+    'economy': 'business',
+    'real-estate': 'business',
+    // Health / medicine
+    'health': 'health',
+    'medical': 'health',
+    'coronavirus': 'health',
+    'covid': 'health',
+    // Environment / outdoors
+    'environment': 'environment',
+    'outdoors': 'environment',
+    'nature': 'environment',
+    'climate': 'environment',
+    // Education
+    'education': 'education',
+    'schools': 'education',
+    // Food / dining
+    'food': 'food',
+    'dining': 'food',
+    'restaurants': 'food',
+    'drink': 'food',
+    'beer': 'food',
+    'wine': 'food',
+    'spirits': 'food',
+    // Weather
+    'weather': 'weather',
+    // Local news
+    'portland': 'news',
+    'oregon': 'news',
+    'pacific-northwest': 'news',
+    'local': 'news',
+};
+
 class RSSManager {
     constructor(db) {
         this.db = db;
@@ -241,10 +302,13 @@ class RSSManager {
                 const url = new URL(link);
                 const pathSegments = url.pathname.split('/').filter(segment => segment.length > 0);
                 if (pathSegments.length > 0) {
-                    urlCategory = pathSegments[0];
-                    if (urlCategory) {
+                    const rawSegment = pathSegments[0];
+                    const mapped = URL_CATEGORY_MAP[rawSegment];
+                    if (mapped) {
+                        urlCategory = mapped;
                         tags.push(urlCategory);
                     }
+                    // If not in map, urlCategory stays null → falls through to keyword matching
                 }
             } catch (error) {
                 // URL parsing failed, continue without URL-based category
@@ -256,10 +320,13 @@ class RSSManager {
                 const url = new URL(link);
                 const pathSegments = url.pathname.split('/').filter(segment => segment.length > 0);
                 if (pathSegments.length > 0) {
-                    urlCategory = pathSegments[0];
-                    if (urlCategory) {
-                        tags.push(urlCategory); // Add URL category first for wweek.com
+                    const rawSegment = pathSegments[0];
+                    const mapped = URL_CATEGORY_MAP[rawSegment];
+                    if (mapped) {
+                        urlCategory = mapped;
+                        tags.push(urlCategory);
                     }
+                    // If not in map, urlCategory stays null → falls through to keyword matching
                 }
             } catch (error) {
                 // URL parsing failed, continue without URL-based category

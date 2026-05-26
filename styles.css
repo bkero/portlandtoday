@@ -125,6 +125,17 @@ header {
     gap: 0.25rem;
 }
 
+.weather-main {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.weather-icon {
+    font-size: 2rem;
+    line-height: 1;
+}
+
 .weather-temp {
     font-size: 2rem;
     font-weight: 700;
@@ -150,7 +161,6 @@ header {
 
 /* Main content */
 main {
-    max-width: 1200px;
     margin: 0 auto;
     padding: 2rem 1rem;
 }
@@ -229,7 +239,68 @@ select {
     display: none;
 }
 
-/* Articles grid - 2 column layout */
+/* Header News section - integrated with header */
+.header-news-section {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.header-news-content {
+    width: 100%;
+    margin: 0;
+    padding: 0;
+}
+
+.header-news-title {
+    color: white;
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin: 0;
+    opacity: 0.95;
+    padding: 1rem;
+    background: rgba(0, 0, 0, 0.1);
+}
+
+.header-news-iframe {
+    width: 100%;
+    border: none;
+    border-radius: 0;
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: none;
+    display: block;
+}
+
+.news-expand-container {
+    text-align: center;
+    padding: 0.25rem;
+    background: rgba(0, 0, 0, 0.05);
+}
+
+.news-expand-button {
+    background: rgba(255, 255, 255, 0.2);
+    color: white;
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    padding: 0.25rem 0.5rem;
+    border-radius: 15px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: 400;
+    transition: all 0.3s ease;
+    min-width: 30px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto;
+}
+
+.news-expand-button:hover {
+    background: rgba(255, 255, 255, 0.3);
+    border-color: rgba(255, 255, 255, 0.5);
+    transform: translateY(-1px);
+}
+
+/* Articles grid - 2 column layout for non-news sections */
 .articles-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
@@ -441,6 +512,28 @@ footer {
     
     .weather-display {
         align-items: center;
+    }
+    
+    .weather-main {
+        justify-content: center;
+    }
+    
+    .header-news-content {
+        padding: 0;
+    }
+    
+    .header-news-title {
+        font-size: 1.3rem;
+        padding: 0.75rem;
+    }
+    
+    .news-expand-container {
+        padding: 0.75rem;
+    }
+    
+    .news-expand-button {
+        font-size: 0.8rem;
+        padding: 0.4rem 1.2rem;
     }
     
     .footer-content {
