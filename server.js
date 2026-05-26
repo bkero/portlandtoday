@@ -63,7 +63,7 @@ class NewsServer {
         res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
         res.setHeader('Content-Security-Policy',
             "default-src 'self'; script-src 'self'; style-src 'self'; " +
-            "img-src 'none'; connect-src 'self'; frame-ancestors 'none'; " +
+            "img-src 'none'; connect-src 'self'; frame-src data:; frame-ancestors 'none'; " +
             "object-src 'none'; base-uri 'self'; form-action 'self'");
 
         // CORS: allow same origin for GET reads; POST endpoints enforce token auth separately
