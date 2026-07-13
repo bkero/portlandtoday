@@ -379,6 +379,20 @@ class NewsAggregator {
         return /^https?:\/\//i.test(url) ? url : '#';
     }
 
+    // OregonLive serves lightweight AMP versions of its articles via the
+    // outputType=amp query param. Rewrite oregonlive.com links to use it.
+    ampifyOregonLiveLink(url) {
+        if (!/^https?:\/\//i.test(url)) return url;
+        try {
+            const parsed = new URL(url);
+            if (!/(^|\.)oregonlive\.com$/i.test(parsed.hostname)) return url;
+            parsed.searchParams.set('outputType', 'amp');
+            return parsed.toString();
+        } catch {
+            return url;
+        }
+    }
+
     createIframeContent(articles, showDetails = false, todayOnly = false) {
         const articlesHtml = articles.map(article => this.createArticleRow(article, todayOnly)).join('');
         const containerClass = showDetails ? 'articles-container show-details' : 'articles-container';
@@ -503,7 +517,7 @@ class NewsAggregator {
             minute: '2-digit'
         });
 
-        const safeLink = this.safeUrl(article.link);
+        const safeLink = this.safeUrl(this.ampifyOregonLiveLink(article.link));
         const safeTitle = this.escapeHtml(article.title);
         const safeDescription = this.escapeHtml(
             article.description.slice(0, 100) + (article.description.length > 100 ? '...' : '')
